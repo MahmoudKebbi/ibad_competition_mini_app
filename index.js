@@ -10,7 +10,7 @@ const Logger = {
 };
 
 /* ---------- CONFIG ---------- */
-const API_BASE = "https://script.google.com/macros/s/AKfycbw7ZyeNE3CgYTzYUfMBJx8Ki4Oz0IEQ-qFts7cHaF05xzvfhpY0TSAWzBR0_zy0LpGgDA/exec";
+const API_BASE = "https://script.google.com/macros/s/AKfycbzqMqfwy7Y2TCi_qfbyyjM7ueERoEjw6tZE3dn7CXv_ephKQviQ3oA7qBIOFpasQfat/exec";
 const PROXY = "https://api.allorigins.win/raw?url=";
 
 Logger.info("Application initialized", { API_BASE });
