@@ -1,15 +1,19 @@
 /* ---------- LOGGING UTILITY ---------- */
+const IS_PRODUCTION = false; // Set to true for competition day
+
 const Logger = {
-    info: (msg, data) => console.log(`[INFO] ${new Date().toISOString()} - ${msg}`, data || ''),
+    info: (msg, data) => !IS_PRODUCTION && console.log(`[INFO] ${new Date().toISOString()} - ${msg}`, data || ''),
     warn: (msg, data) => console.warn(`[WARN] ${new Date().toISOString()} - ${msg}`, data || ''),
     error: (msg, data) => console.error(`[ERROR] ${new Date().toISOString()} - ${msg}`, data || ''),
-    debug: (msg, data) => console.log(`[DEBUG] ${new Date().toISOString()} - ${msg}`, data || ''),
-    trace: (functionName, action, data) => console.log(`[TRACE] ${new Date().toISOString()} - ${functionName}() - ${action}`, data || '')
+    debug: (msg, data) => !IS_PRODUCTION && console.log(`[DEBUG] ${new Date().toISOString()} - ${msg}`, data || ''),
+    trace: (fn, action, data) => !IS_PRODUCTION && console.log(`[TRACE] ${new Date().toISOString()} - ${fn}() - ${action}`, data || '')
 };
 
 /* ---------- CONFIG ---------- */
 const API_BASE = "https://script.google.com/macros/s/AKfycbyCKIWFSAmXU2Pztbel14WYt90BxkMuMl8D048RrCJpe3rbL4bn1oC2E1XGoC5U-PWM6g/exec";
-Logger.info('Application initialized', { API_BASE });
+const PROXY = "https://api.allorigins.win/raw?url=";
+
+Logger.info("Application initialized", { API_BASE });
 
 /* ---------- Helpers ---------- */
 const $ = s => document.querySelector(s);
@@ -20,7 +24,7 @@ const num = v => {
     s = s.replace(/[^\d.\-]/g, "");
     const n = parseFloat(s);
     const result = isFinite(n) ? n : 0;
-    Logger.trace('num', 'Converting value', { input: v, output: result });
+    Logger.trace("num", "Converting value", { input: v, output: result });
     return result;
 };
 
@@ -32,74 +36,111 @@ let state = {
     selParticipant: null, 
     grades: [], 
     currentQuestion: 1,
-    availableParticipants: [], // Available participants for committee
-    currentParticipantIndex: 0 // Track current participant
+    availableParticipants: [],
+    currentParticipantIndex: 0
 };
 
-/* ---------- API ---------- */
+/* ---------- API (CORS Safe) ---------- */
 async function apiGet(action, params = {}) {
     Logger.info(`API GET request: ${action}`, params);
     const url = new URL(API_BASE);
     url.searchParams.set("action", action);
     for (const k in params) url.searchParams.set(k, params[k]);
 
+    let fetchUrl = url.toString();
+
+    if (location.protocol === "file:") {
+        Logger.warn("Local file detected — routing through proxy");
+        fetchUrl = PROXY + encodeURIComponent(url.toString());
+    }
+
     try {
-        const res = await fetch(url);
-        const data = await res.json();
-        Logger.info(`API GET response: ${action}`, { success: data.ok, data });
-        return data;
+        const res = await fetch(fetchUrl, { mode: "cors" });
+        const text = await res.text();
+        try {
+            const data = JSON.parse(text);
+            Logger.info(`API GET response: ${action}`, { ok: data.ok });
+            return data;
+        } catch {
+            Logger.error("Failed to parse JSON response", { text });
+            return { ok: false, error: "Invalid JSON from server" };
+        }
     } catch (error) {
-        Logger.error(`API GET failed: ${action}`, { error: error.message, params });
-        throw error;
+        Logger.error(`API GET failed: ${action}`, { error: error.message });
+        return { ok: false, error: error.message };
     }
 }
 
 async function apiPost(body) {
-    Logger.info('API POST request', body);
+    Logger.info("API POST request", { action: body.action });
+
+    let fetchUrl = API_BASE;
+    if (location.protocol === "file:") {
+        Logger.warn("Local file detected — routing POST through proxy");
+        fetchUrl = PROXY + encodeURIComponent(API_BASE);
+    }
+
     try {
-        const res = await fetch(API_BASE, { 
+        const res = await fetch(fetchUrl, { 
             method: "POST", 
-            headers: { "Content-Type": "application/json" }, 
-            body: JSON.stringify(body) 
+            headers: { "Content-Type": "application/json" },
+            mode: "cors",
+            body: JSON.stringify(body)
         });
-        const data = await res.json();
-        Logger.info('API POST response', { success: data.ok, data });
-        return data;
+
+        const text = await res.text();
+        try {
+            const data = JSON.parse(text);
+            Logger.info("API POST response", { success: data.ok });
+            return data;
+        } catch {
+            Logger.error("Failed to parse JSON POST response", { text });
+            return { ok: false, error: "Invalid JSON from server" };
+        }
     } catch (e) {
-        Logger.error('API POST failed', { error: String(e), body });
+        Logger.error("API POST failed", { error: String(e) });
         return { ok: false, error: String(e) };
     }
 }
 
 /* ---------- Boot ---------- */
 (async function boot() {
-    Logger.info('Application booting...');
-    await refreshAll();
-    buildCommitteeSelects();
-    wireUI();
-    Logger.info('Application boot complete');
+    Logger.info("Application booting...");
+    try {
+        await refreshAll();
+        buildCommitteeSelects();
+        wireUI();
+        Logger.info("Application boot complete");
+    } catch (e) {
+        Logger.error("Boot failed", e);
+        alert("فشل تحميل التطبيق. تحقق من الاتصال.");
+    }
 })();
 
 async function refreshAll() {
     Logger.trace('refreshAll', 'Starting data refresh');
+    
     const cResp = await apiGet("committees");
-    state.committees = cResp.ok ? cResp.committees : [];
+    state.committees = cResp.ok ? (cResp.committees || cResp.data || []) : [];
     Logger.info('Committees loaded', { count: state.committees.length });
 
     const pResp = await apiGet("participants");
-    state.participants = pResp.ok ? pResp.participants : [];
+    state.participants = pResp.ok ? (pResp.participants || pResp.data || []) : [];
     Logger.info('Participants loaded', { count: state.participants.length });
 }
 
 /* ---------- Build selects ---------- */
 function buildCommitteeSelects() {
     Logger.trace('buildCommitteeSelects', 'Building committee dropdowns');
-    $("#committeeSelect").innerHTML = state.committees
+    const sel = $("#committeeSelect");
+    if (!sel) return Logger.warn("No #committeeSelect found");
+    
+    sel.innerHTML = state.committees
         .filter(c => c.Committee !== 'admin')
         .map(c => `<option value="${c.Committee}">${c.Committee}</option>`)
         .join("");
-    $("#new_committee").innerHTML = $("#committeeSelect").innerHTML;
-    $("#pw_commit_select").innerHTML = $("#committeeSelect").innerHTML;
+    $("#new_committee").innerHTML = sel.innerHTML;
+    $("#pw_commit_select").innerHTML = sel.innerHTML;
     $("#admCommitteeFilter").innerHTML = '<option value="">الكل</option>' + 
         state.committees
             .filter(c => c.Committee !== 'admin')
@@ -145,7 +186,7 @@ $("#btnLogin").addEventListener("click", async () => {
         const adminRow = state.committees.find(x => String(x.Committee).toLowerCase() === "admin");
         const expected = adminRow ? String(adminRow.Password || "") : "admin123";
         if (pass !== expected) {
-            Logger.warn('Admin login failed', { reason: 'Invalid password', expected, provided: pass });
+            Logger.warn('Admin login failed', { reason: 'Invalid password' }); // Password removed from logs
             alert("كلمة مرور الإدارة خاطئة");
             return;
         }
@@ -162,10 +203,8 @@ $("#btnLogin").addEventListener("click", async () => {
         if (pass !== expected) {
             Logger.warn('Committee login failed', { 
                 committee: c, 
-                reason: 'Invalid password', 
-                expected, 
-                provided: pass, 
-                found 
+                reason: 'Invalid password'
+                // Passwords removed from logs
             });
             alert("كلمة مرور اللجنة خاطئة");
             return;
@@ -298,7 +337,7 @@ async function showParticipant(p) {
 
     Logger.info('Loading grades for participant', { participantId: p.id });
     const gResp = await apiGet("grades", { participant_id: p.id });
-    state.grades = gResp.ok ? gResp.grades.slice() : [];
+    state.grades = gResp.ok ? (gResp.grades || gResp.data || []).slice() : [];
     Logger.info('Grades loaded', { participantId: p.id, gradeCount: state.grades.length });
 
     for (let i = 1; i <= cfg.N; i++) {
@@ -330,7 +369,7 @@ function renderQuestion() {
         "تجويد": 0 
     };
 
-    Logger.debug('Question details', { questionNumber: qn, totalQuestions: total, grades: g });
+    Logger.debug('Question details', { questionNumber: qn, totalQuestions: total });
 
     $("#q-title").textContent = `السؤال ${qn} من ${total}`;
     $("#in-hifz").value = g["حفظ"] || 0;
@@ -359,8 +398,7 @@ function saveCurrentGradeLocal() {
 
     Logger.info('Grade saved locally', {
         participantId: row.participant_id,
-        questionNumber: qn,
-        grades: { حفظ: row["حفظ"], أداء: row["أداء"], تجويد: row["تجويد"] }
+        questionNumber: qn
     });
 
     updateRunningTotal();
@@ -389,7 +427,7 @@ function updateRunningTotal() {
     const total = Math.min(H, cfg.perH * cfg.N) + Math.min(A, cfg.perA * cfg.N) + 
                   (cfg.tajOn ? Math.min(T, cfg.perT * cfg.N) : 0);
     $("#runningTotal").value = `${total} / ${cfg.stageTotal}`;
-    Logger.debug('Running total updated', { total, max: cfg.stageTotal, H, A, T });
+    Logger.debug('Running total updated', { total, max: cfg.stageTotal });
 }
 
 function prevQuestion() {
@@ -426,9 +464,9 @@ async function finishEvaluation() {
         Logger.info('Evaluation finalized successfully', { participantId: pid });
         alert("تم إنهاء التقييم وحساب النتائج.");
         await refreshAll();
-        renderCommittee();
+        buildParticipantDropdown();
     } else {
-        Logger.error('Evaluation finalization failed', { participantId: pid, error: res.error });
+        Logger.error('Evaluation finalization failed', { participantId: pid });
         alert("فشل إنهاء التقييم: " + (res.error || ""));
     }
 }
@@ -496,10 +534,10 @@ function renderAdminTable() {
     tbody.querySelectorAll('input[data-id]').forEach(inp => {
         inp.addEventListener('change', async () => {
             const id = inp.dataset.id, field = inp.dataset.field, value = inp.value;
-            Logger.info('Participant field update', { id, field, value });
+            Logger.info('Participant field update', { id, field });
             const res = await apiPost({ action: "update_participant", id: id, [field]: value });
             if (!res.ok) {
-                Logger.error('Participant update failed', { id, field, error: res.error });
+                Logger.error('Participant update failed', { id, field });
                 alert("فشل الحفظ: " + (res.error || ""));
             } else {
                 Logger.info('Participant updated successfully', { id, field });
@@ -515,9 +553,10 @@ function renderAdminTable() {
             Logger.info('Viewing grades for participant', { participantId: id });
             const g = await apiGet("grades", { participant_id: id });
             if (g.ok) {
-                Logger.debug('Grades retrieved', { participantId: id, gradeCount: g.grades.length });
+                const grades = g.grades || g.data || [];
+                Logger.debug('Grades retrieved', { participantId: id, gradeCount: grades.length });
                 let s = `درجات المشارك ${id}\n\n`;
-                g.grades.sort((a, b) => a.question_number - b.question_number)
+                grades.sort((a, b) => a.question_number - b.question_number)
                     .forEach(q => s += `س${q.question_number} — حفظ:${q["حفظ"]} أداء:${q["أداء"]} تجويد:${q["تجويد"]}\n`);
                 alert(s);
             } else {
@@ -537,12 +576,12 @@ function renderAdminTable() {
             }
             const res = await apiPost({ action: "reset_participant_grades", participant_id: id });
             if (res.ok) {
-                Logger.info('Grades reset successfully', { participantId: id, rowsRemoved: res.removed });
-                alert("تمت إعادة التعيين. عدد الصفوف المحذوفة: " + res.removed);
+                Logger.info('Grades reset successfully', { participantId: id });
+                alert("تمت إعادة التعيين. عدد الصفوف المحذوفة: " + (res.removed || 0));
                 await refreshAll();
                 renderAdminTable();
             } else {
-                Logger.error('Grade reset failed', { participantId: id, error: res.error });
+                Logger.error('Grade reset failed', { participantId: id });
                 alert("فشل إعادة التعيين.");
             }
         });
@@ -567,16 +606,16 @@ async function addParticipant() {
         "اللجنة": $("#new_committee").value || ""
     };
 
-    Logger.info('Adding participant', payload);
+    Logger.info('Adding participant');
     const res = await apiPost(payload);
 
     if (res.ok) {
-        Logger.info('Participant added successfully', { id: res.id, name });
+        Logger.info('Participant added successfully', { id: res.id });
         alert("تمت الإضافة. المعرّف: " + res.id);
         await refreshAll();
         renderAdminTable();
     } else {
-        Logger.error('Add participant failed', { error: res.error, payload });
+        Logger.error('Add participant failed');
         alert("فشل الإضافة: " + (res.error || ""));
     }
 }
@@ -603,12 +642,12 @@ async function resetParticipantGrades() {
     const res = await apiPost({ action: "reset_participant_grades", participant_id: pid });
 
     if (res.ok) {
-        Logger.info('Grades reset successfully', { participantId: pid, rowsRemoved: res.removed });
+        Logger.info('Grades reset successfully', { participantId: pid });
         alert("تمت إعادة التعيين.");
         await refreshAll();
         renderAdminTable();
     } else {
-        Logger.error('Grade reset failed', { participantId: pid, error: res.error });
+        Logger.error('Grade reset failed', { participantId: pid });
         alert("فشل: " + (res.error || ""));
     }
 }
@@ -639,7 +678,7 @@ function exportXlsx() {
         ]);
     });
 
-    Logger.info('Exporting XLSX', { participantCount: state.participants.length, rowCount: data.length });
+    Logger.info('Exporting XLSX', { participantCount: state.participants.length });
 
     const ws = XLSX.utils.aoa_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -652,8 +691,7 @@ function exportXlsx() {
 function wireUI() {
     Logger.trace('wireUI', 'Wiring UI event handlers');
 
-    // Logout button
-    $("#btnLogout").addEventListener('click', logout);
+    $("#btnLogout")?.addEventListener('click', logout);
 
     $$(".tab").forEach(b => {
         b.addEventListener('click', () => {
@@ -667,14 +705,14 @@ function wireUI() {
         });
     });
 
-    $("#admRefresh").addEventListener('click', async () => {
+    $("#admRefresh")?.addEventListener('click', async () => {
         Logger.info('Admin data refresh triggered');
         await refreshAll();
         renderAdminTable();
     });
 
-    $("#admCommitteeFilter").addEventListener('change', renderAdminTable);
-    $("#admSubmittedFilter").addEventListener('change', renderAdminTable);
+    $("#admCommitteeFilter")?.addEventListener('change', renderAdminTable);
+    $("#admSubmittedFilter")?.addEventListener('change', renderAdminTable);
 
     Logger.info('UI wiring completed');
 }
@@ -683,9 +721,7 @@ window.addEventListener('error', (event) => {
     Logger.error('Uncaught error', {
         message: event.message,
         filename: event.filename,
-        lineno: event.lineno,
-        colno: event.colno,
-        error: event.error
+        lineno: event.lineno
     });
 });
 
