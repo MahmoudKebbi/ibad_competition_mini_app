@@ -10,7 +10,7 @@ const Logger = {
 };
 
 /* ---------- CONFIG ---------- */
-const API_BASE = "https://script.google.com/macros/s/AKfycbyCKIWFSAmXU2Pztbel14WYt90BxkMuMl8D048RrCJpe3rbL4bn1oC2E1XGoC5U-PWM6g/exec";
+const API_BASE = "https://script.google.com/macros/s/AKfycbxcBM2bx_0p_WtAlNt-3IaopIKKQrVhIxLsS0GPUdvzSbJtd-PPjfDg3AYMqku7LIeOtA/exec";
 const PROXY = "https://api.allorigins.win/raw?url=";
 
 Logger.info("Application initialized", { API_BASE });
@@ -71,37 +71,36 @@ async function apiGet(action, params = {}) {
     }
 }
 
-async function apiPost(body) {
-    Logger.info("API POST request", { action: body.action });
-
-    let fetchUrl = API_BASE;
-    if (location.protocol === "file:") {
-        Logger.warn("Local file detected — routing POST through proxy");
-        fetchUrl = PROXY + encodeURIComponent(API_BASE);
-    }
+async function apiPost(data) {
+    Logger.info("API POST request", data);
 
     try {
-        const res = await fetch(fetchUrl, { 
-            method: "POST", 
-            headers: { "Content-Type": "application/json" },
-            mode: "cors",
-            body: JSON.stringify(body)
+        const res = await fetch(API_BASE, {
+            method: "POST",
+            redirect: "follow",                   // ✅ critical for Google redirects
+            headers: {
+                "Content-Type": "text/plain;charset=utf-8" // ✅ avoids CORS preflight
+            },
+            body: JSON.stringify(data)
         });
 
         const text = await res.text();
+        let json;
         try {
-            const data = JSON.parse(text);
-            Logger.info("API POST response", { success: data.ok });
-            return data;
-        } catch {
+            json = JSON.parse(text);
+            Logger.info("API POST response", { success: json.ok, data: json });
+            return json;
+        } catch (err) {
             Logger.error("Failed to parse JSON POST response", { text });
             return { ok: false, error: "Invalid JSON from server" };
         }
-    } catch (e) {
-        Logger.error("API POST failed", { error: String(e) });
-        return { ok: false, error: String(e) };
+
+    } catch (err) {
+        Logger.error("API POST failed", { error: String(err), body: data });
+        return { ok: false, error: String(err) };
     }
 }
+
 
 /* ---------- Boot ---------- */
 (async function boot() {
