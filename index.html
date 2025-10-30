@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>مسابقة القرآن — سؤال بسؤال</title>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <header>
+        <div class="header-content">
+            <h1>بِسْمِ اللهِ — مسابقة القرآن (سؤال بسؤال)</h1>
+            <button id="btnLogout" class="btn btn-logout hidden">تسجيل الخروج</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- LOGIN -->
+        <section id="login" class="card">
+            <h3>تسجيل الدخول</h3>
+            <div class="grid-2">
+                <div>
+                    <label>الدور</label>
+                    <select id="role">
+                        <option value="committee">لجنة</option>
+                        <option value="admin">إدارة</option>
+                    </select>
+                </div>
+                <div id="committeeBox">
+                    <label>رقم اللجنة</label>
+                    <select id="committeeSelect"></select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>كلمة المرور</label>
+                <input id="password" type="password" placeholder="••••••" />
+            </div>
+            <div class="form-actions">
+                <button id="btnLogin" class="btn btn-primary">دخول</button>
+                <div class="muted">لجان ترى التقدير فقط. الجائزة المالية تظهر للإدارة.</div>
+            </div>
+        </section>
+
+        <!-- COMMITTEE UI -->
+        <section id="committeeUI" class="hidden">
+            <div class="card">
+                <div class="muted text-center">املأ حفظ / أداء / تجويد لكل سؤال، ثم اضغط "إنهاء التقييم".</div>
+                <div class="search-bar">
+                    <select id="participantDropdown" class="participant-select">
+                        <option value="">-- اختر متسابقاً --</option>
+                    </select>
+                    <button id="btnRefresh" class="btn">تحديث</button>
+                </div>
+            </div>
+
+            <section id="card" class="card hidden">
+                <div class="card-header">
+                    <div>
+                        <h3 id="d-name">—</h3>
+                        <div class="muted" id="d-meta"></div>
+                    </div>
+                    <div>
+                        <span id="submittedTag" class="pill hidden">تم الإرسال</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>عدد الأسئلة</label>
+                    <input id="d-qcount" disabled />
+                    <div class="progress">
+                        <div id="progressBar" class="progress-bar"></div>
+                    </div>
+                </div>
+
+                <div id="questionCard" class="question-section">
+                    <h4 id="q-title">السؤال 1</h4>
+                    <div class="grid-3">
+                        <div>
+                            <label>حفظ (ماكس)</label>
+                            <input id="in-hifz" type="number" />
+                        </div>
+                        <div>
+                            <label>أداء (ماكس)</label>
+                            <input id="in-ada" type="number" />
+                        </div>
+                        <div id="taj-wrapper">
+                            <label>تجويد (ماكس)</label>
+                            <input id="in-taj" type="number" />
+                        </div>
+                    </div>
+
+                    <div class="btn-group">
+                        <button id="btnPrev" class="btn">السابق</button>
+                        <button id="btnNext" class="btn btn-primary">التالي</button>
+                        <button id="btnFinish" class="btn btn-success">إنهاء التقييم</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>المجموع الحالي</label>
+                    <input id="runningTotal" disabled />
+                </div>
+
+                <!-- Navigation between participants -->
+                <div class="participant-nav">
+                    <button id="btnPrevParticipant" class="btn">← المتسابق السابق</button>
+                    <button id="btnNextParticipant" class="btn">المتسابق التالي →</button>
+                </div>
+            </section>
+        </section>
+
+        <!-- ADMIN UI -->
+        <section id="adminUI" class="hidden">
+            <div class="card">
+                <div class="tabs">
+                    <button class="tab active" data-tab="scores">العلامات</button>
+                    <button class="tab" data-tab="manage">إدارة</button>
+                    <button class="tab" data-tab="export">تصدير</button>
+                </div>
+
+                <div id="admin-scores">
+                    <div class="filter-bar">
+                        <div class="filter-group">
+                            <label>فلتر لجنة</label>
+                            <select id="admCommitteeFilter">
+                                <option value="">الكل</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label>مرسَل؟</label>
+                            <select id="admSubmittedFilter">
+                                <option value="">الكل</option>
+                                <option value="yes">نعم</option>
+                                <option value="no">لا</option>
+                            </select>
+                        </div>
+                        <button id="admRefresh" class="btn">تحديث</button>
+                    </div>
+
+                    <div class="table-container">
+                        <table id="adminTable">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>اللجنة</th>
+                                    <th>الاسم</th>
+                                    <th>العمر</th>
+                                    <th>أجزاء</th>
+                                    <th>مجموع</th>
+                                    <th>٪</th>
+                                    <th>تقدير</th>
+                                    <th>جائزة</th>
+                                    <th>تم الإرسال</th>
+                                    <th>إجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="admin-manage" class="hidden">
+                    <div class="grid-2">
+                        <div class="card">
+                            <h4>إضافة مشارك</h4>
+                            <div class="form-group">
+                                <label>الاسم الثلاثي</label>
+                                <input id="new_name" />
+                            </div>
+                            <div class="form-group">
+                                <label>العمر</label>
+                                <input id="new_age" type="number" />
+                            </div>
+                            <div class="form-group">
+                                <label>القسم التربوي</label>
+                                <input id="new_dept" />
+                            </div>
+                            <div class="form-group">
+                                <label>عدد الأجزاء</label>
+                                <input id="new_parts" />
+                            </div>
+                            <div class="form-group">
+                                <label>أرقام الأجزاء</label>
+                                <input id="new_parts_idx" />
+                            </div>
+                            <div class="form-group">
+                                <label>اللجنة</label>
+                                <select id="new_committee"></select>
+                            </div>
+                            <button id="btnAddParticipant" class="btn btn-primary">أضف</button>
+                        </div>
+
+                        <div class="card">
+                            <h4>كلمات مرور اللجان</h4>
+                            <div class="grid-2">
+                                <select id="pw_commit_select"></select>
+                                <input id="pw_new" placeholder="كلمة سر جديدة للّجنة" />
+                            </div>
+                            <button id="btnSetPw" class="btn btn-primary">حفظ</button>
+
+                            <div class="form-section">
+                                <h4>إعادة تعيين درجات مشارك</h4>
+                                <div class="form-group">
+                                    <label>معرّف المشارك</label>
+                                    <input id="reset_pid" />
+                                </div>
+                                <button id="btnResetGrades" class="btn btn-danger">إعادة تعيين</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="admin-export" class="hidden">
+                    <button id="btnExport" class="btn btn-primary">تنزيل XLSX</button>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="index.js"></script>
+</body>
+
+</html>
