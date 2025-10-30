@@ -4,12 +4,16 @@ const Logger = {
     warn: (msg, data) => console.warn(`[WARN] ${new Date().toISOString()} - ${msg}`, data || ''),
     error: (msg, data) => console.error(`[ERROR] ${new Date().toISOString()} - ${msg}`, data || ''),
     debug: (msg, data) => console.log(`[DEBUG] ${new Date().toISOString()} - ${msg}`, data || ''),
-    trace: (functionName, action, data) => console.log(`[TRACE] ${new Date().toISOString()} - ${functionName}() - ${action}`, data || '')
+    trace: (fn, action, data) => console.log(`[TRACE] ${new Date().toISOString()} - ${fn}() - ${action}`, data || '')
 };
 
 /* ---------- CONFIG ---------- */
-const API_BASE = "https://script.google.com/macros/s/AKfycbyCKIWFSAmXU2Pztbel14WYt90BxkMuMl8D048RrCJpe3rbL4bn1oC2E1XGoC5U-PWM6g/exec";
-Logger.info('Application initialized', { API_BASE });
+const API_BASE =
+  "https://script.google.com/macros/s/AKfycbyCKIWFSAmXU2Pztbel14WYt90BxkMuMl8D048RrCJpe3rbL4bn1oC2E1XGoC5U-PWM6g/exec";
+
+const PROXY = "https://api.allorigins.win/raw?url=";
+
+Logger.info("Application initialized", { API_BASE });
 
 /* ---------- Helpers ---------- */
 const $ = s => document.querySelector(s);
@@ -20,7 +24,7 @@ const num = v => {
     s = s.replace(/[^\d.\-]/g, "");
     const n = parseFloat(s);
     const result = isFinite(n) ? n : 0;
-    Logger.trace('num', 'Converting value', { input: v, output: result });
+    Logger.trace("num", "Converting value", { input: v, output: result });
     return result;
 };
 
@@ -32,64 +36,87 @@ let state = {
     selParticipant: null, 
     grades: [], 
     currentQuestion: 1,
-    availableParticipants: [], // Available participants for committee
-    currentParticipantIndex: 0 // Track current participant
+    availableParticipants: [],
+    currentParticipantIndex: 0
 };
 
-/* ---------- API ---------- */
+/* ---------- API (CORS Safe) ---------- */
 async function apiGet(action, params = {}) {
     Logger.info(`API GET request: ${action}`, params);
     const url = new URL(API_BASE);
     url.searchParams.set("action", action);
     for (const k in params) url.searchParams.set(k, params[k]);
 
+    let fetchUrl = url.toString();
+
+    // ✅ detect CORS issue (local file)
+    if (location.protocol === "file:") {
+        Logger.warn("Local file detected — routing through proxy");
+        fetchUrl = PROXY + encodeURIComponent(url.toString());
+    }
+
     try {
-        const res = await fetch(url);
-        const data = await res.json();
-        Logger.info(`API GET response: ${action}`, { success: data.ok, data });
-        return data;
+        const res = await fetch(fetchUrl, { mode: "cors" });
+        const text = await res.text();
+        try {
+            const data = JSON.parse(text);
+            Logger.info(`API GET response: ${action}`, { ok: data.ok, data });
+            return data;
+        } catch {
+            Logger.error("Failed to parse JSON response", { text });
+            return { ok: false, error: "Invalid JSON from server" };
+        }
     } catch (error) {
         Logger.error(`API GET failed: ${action}`, { error: error.message, params });
-        throw error;
+        return { ok: false, error: error.message };
     }
 }
 
 async function apiPost(body) {
-    Logger.info('API POST request', body);
+    Logger.info("API POST request", body);
+
+    let fetchUrl = API_BASE;
+    if (location.protocol === "file:") {
+        Logger.warn("Local file detected — routing POST through proxy");
+        fetchUrl = PROXY + encodeURIComponent(API_BASE);
+    }
+
     try {
-        const res = await fetch(API_BASE, { 
+        const res = await fetch(fetchUrl, { 
             method: "POST", 
-            headers: { "Content-Type": "application/json" }, 
-            body: JSON.stringify(body) 
+            headers: { "Content-Type": "application/json" },
+            mode: "cors",
+            body: JSON.stringify(body)
         });
-        const data = await res.json();
-        Logger.info('API POST response', { success: data.ok, data });
-        return data;
+
+        const text = await res.text();
+        try {
+            const data = JSON.parse(text);
+            Logger.info("API POST response", { success: data.ok, data });
+            return data;
+        } catch {
+            Logger.error("Failed to parse JSON POST response", { text });
+            return { ok: false, error: "Invalid JSON from server" };
+        }
     } catch (e) {
-        Logger.error('API POST failed', { error: String(e), body });
+        Logger.error("API POST failed", { error: String(e), body });
         return { ok: false, error: String(e) };
     }
 }
 
 /* ---------- Boot ---------- */
 (async function boot() {
-    Logger.info('Application booting...');
-    await refreshAll();
-    buildCommitteeSelects();
-    wireUI();
-    Logger.info('Application boot complete');
+    Logger.info("Application booting...");
+    try {
+        await refreshAll();
+        buildCommitteeSelects();
+        wireUI();
+        Logger.info("Application boot complete");
+    } catch (e) {
+        Logger.error("Boot failed", e);
+        alert("فشل تحميل التطبيق. تحقق من الاتصال.");
+    }
 })();
-
-async function refreshAll() {
-    Logger.trace('refreshAll', 'Starting data refresh');
-    const cResp = await apiGet("committees");
-    state.committees = cResp.ok ? cResp.committees : [];
-    Logger.info('Committees loaded', { count: state.committees.length });
-
-    const pResp = await apiGet("participants");
-    state.participants = pResp.ok ? pResp.participants : [];
-    Logger.info('Participants loaded', { count: state.participants.length });
-}
 
 /* ---------- Build selects ---------- */
 function buildCommitteeSelects() {
