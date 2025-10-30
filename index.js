@@ -75,13 +75,16 @@ async function apiPost(data) {
     Logger.info("API POST request", data);
 
     try {
+        // Convert to URL-encoded form data instead of JSON
+        const formData = new URLSearchParams();
+        for (const key in data) {
+            formData.append(key, data[key]);
+        }
+
         const res = await fetch(API_BASE, {
             method: "POST",
-            redirect: "follow",                   // ✅ critical for Google redirects
-            headers: {
-                "Content-Type": "text/plain;charset=utf-8" // ✅ avoids CORS preflight
-            },
-            body: JSON.stringify(data)
+            redirect: "follow",
+            body: formData  // Send as form data, not JSON
         });
 
         const text = await res.text();
