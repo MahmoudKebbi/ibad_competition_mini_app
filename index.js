@@ -500,8 +500,8 @@ async function finishEvaluation() {
     if (res.ok) {
         Logger.info('Evaluation finalized successfully', { participantId: pid });
         alert("تم إنهاء التقييم وحساب النتائج.");
-        await refreshAll();
-        buildParticipantDropdown();
+        await refreshAll(); // Refetch data
+        buildParticipantDropdown(); // Rebuild the participant dropdown
     } else {
         Logger.error('Evaluation finalization failed', { participantId: pid });
         alert("فشل إنهاء التقييم: " + (res.error || ""));
@@ -580,8 +580,8 @@ function renderAdminTable() {
                 alert("فشل الحفظ: " + (res.error || ""));
             } else {
                 Logger.info('Participant updated successfully', { id, field });
-                await refreshAll();
-                renderAdminTable();
+                await refreshAll(); // Refetch data
+                renderAdminTable(); // Re-render the admin table
             }
         });
     });
@@ -651,8 +651,8 @@ async function addParticipant() {
     if (res.ok) {
         Logger.info('Participant added successfully', { id: res.id });
         alert("تمت الإضافة. المعرّف: " + res.id);
-        await refreshAll();
-        renderAdminTable();
+        await refreshAll(); // Refetch data
+        renderAdminTable(); // Re-render the admin table
     } else {
         Logger.error('Add participant failed');
         alert("فشل الإضافة: " + (res.error || ""));
@@ -683,8 +683,8 @@ async function resetParticipantGrades() {
     if (res.ok) {
         Logger.info('Grades reset successfully', { participantId: pid });
         alert("تمت إعادة التعيين.");
-        await refreshAll();
-        renderAdminTable();
+        await refreshAll(); // Refetch data
+        renderAdminTable(); // Re-render the admin table
     } else {
         Logger.error('Grade reset failed', { participantId: pid });
         alert("فشل: " + (res.error || ""));
