@@ -10,7 +10,7 @@ const Logger = {
 };
 
 /* ---------- CONFIG ---------- */
-const API_BASE = "https://script.google.com/macros/s/AKfycbz0SY_zf_8wngrS4I03F5LwTWN9M0e59Jt4y7GQX9JHvBhWH82RdYGlHkZbESPemoXjwg/exec";
+const API_BASE = "https://script.google.com/macros/s/AKfycbxfYBVamqq1Ua7lNsgw7sanBb7tunSdP9NxVX1Ggq6JI7mwBVYrRW2RP-WOimAbq9xJOQ/exec";
 const PROXY = "https://api.allorigins.win/raw?url=";
 
 Logger.info("Application initialized", { API_BASE });
@@ -41,29 +41,52 @@ let state = {
 };
 
 /* ---------- API (CORS Safe) ---------- */
+/* ---------- IMPROVED API GET (CORS Safe) ---------- */
 async function apiGet(action, params = {}) {
     Logger.info(`API GET request: ${action}`, params);
+    
+    // Build URL with parameters
     const url = new URL(API_BASE);
     url.searchParams.set("action", action);
-    for (const k in params) url.searchParams.set(k, params[k]);
+    for (const k in params) {
+        if (params[k] !== undefined && params[k] !== null) {
+            url.searchParams.set(k, params[k]);
+        }
+    }
 
     let fetchUrl = url.toString();
+    const useProxy = location.protocol === "file:" || location.hostname === "localhost";
 
-    if (location.protocol === "file:") {
-        Logger.warn("Local file detected — routing through proxy");
+    if (useProxy) {
+        Logger.warn("Using CORS proxy for local development");
         fetchUrl = PROXY + encodeURIComponent(url.toString());
     }
 
+    Logger.debug("Final fetch URL:", fetchUrl);
+
     try {
-        const res = await fetch(fetchUrl, { mode: "cors" });
+        const res = await fetch(fetchUrl, { 
+            method: 'GET',
+            mode: 'cors',
+            headers: {
+                'Accept': 'application/json',
+            }
+        });
+
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+
         const text = await res.text();
+        Logger.debug("Raw response:", text);
+        
         try {
             const data = JSON.parse(text);
             Logger.info(`API GET response: ${action}`, { ok: data.ok });
             return data;
-        } catch {
-            Logger.error("Failed to parse JSON response", { text });
-            return { ok: false, error: "Invalid JSON from server" };
+        } catch (parseError) {
+            Logger.error("JSON parse error", { text, error: parseError.message });
+            return { ok: false, error: "Invalid JSON response: " + text.substring(0, 100) };
         }
     } catch (error) {
         Logger.error(`API GET failed: ${action}`, { error: error.message });
@@ -72,22 +95,46 @@ async function apiGet(action, params = {}) {
 }
 
 async function apiPost(data = {}) {
-  try {
-    const res = await fetch(API_BASE, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-
-    if (!res.ok) {
-      throw new Error(`Network error: ${res.status}`);
+    Logger.info("API POST request", data);
+    
+    // Build URL with action parameter for better compatibility
+    const url = new URL(API_BASE);
+    if (data.action) {
+        url.searchParams.set('action', data.action);
     }
 
-    return await res.json();
-  } catch (err) {
-    console.error("API POST error:", err);
-    return { ok: false, error: String(err) };
-  }
+    let fetchUrl = url.toString();
+    
+    // Use proxy for local file protocol
+    if (location.protocol === "file:") {
+        Logger.warn("Local file detected — routing through proxy");
+        fetchUrl = PROXY + encodeURIComponent(url.toString());
+    }
+
+    try {
+        const res = await fetch(fetchUrl, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: Object.keys(data)
+                .map(key => encodeURIComponent(key) + '=' + encodeURIComponent(data[key]))
+                .join('&')
+        });
+
+        const text = await res.text();
+        Logger.info("API POST raw response", { status: res.status, text });
+        
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            Logger.error("Failed to parse JSON response", { text });
+            return { ok: false, error: "Invalid JSON response: " + text };
+        }
+    } catch (err) {
+        Logger.error("API POST network error", err);
+        return { ok: false, error: "Network error: " + err.message };
+    }
 }
 
 
