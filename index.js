@@ -362,6 +362,7 @@ async function showParticipant(p) {
     $("#card").classList.remove("hidden");
     $("#d-name").textContent = p["الاسم الثلاثي"] || "—";
     $("#d-meta").textContent = `العمر: ${p["العمر"] || ""} — القسم: ${p["القسم التربوي"] || ""}`;
+    $("#d-parts-numbers").value = p["أرقام الأجزاء"] || "—"; // Populate parts numbers
     const cfg = stageConfig(p["عدد الأجزاء"], p["العمر"]);
     $("#d-qcount").value = cfg.N;
     $("#taj-wrapper").classList.toggle("hidden", !cfg.tajOn);
@@ -550,10 +551,12 @@ function renderAdminTable() {
         const tr = document.createElement("tr");
         tr.innerHTML = `
             <td>${idx + 1}</td>
+            <td>${r.id || "—"}</td> <!-- Add the ID here -->
             <td><input data-id="${r.id}" data-field="اللجنة" value="${r["اللجنة"] || ""}" /></td>
             <td>${r["الاسم الثلاثي"] || ""}</td>
             <td><input data-id="${r.id}" data-field="العمر" value="${r["العمر"] || ""}" /></td>
             <td><input data-id="${r.id}" data-field="عدد الأجزاء" value="${r["عدد الأجزاء"] || ""}" /></td>
+            <td>${r["أرقام الأجزاء"] || "—"}</td>
             <td>${r["المجموع"] || 0}</td>
             <td>${pct}%</td>
             <td>${r["تقدير"] || ""}</td>
