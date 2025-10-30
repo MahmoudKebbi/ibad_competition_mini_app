@@ -71,38 +71,25 @@ async function apiGet(action, params = {}) {
     }
 }
 
-async function apiPost(data) {
-    Logger.info("API POST request", data);
+async function apiPost(data = {}) {
+  try {
+    const res = await fetch(API_BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
 
-    try {
-        // Convert to URL-encoded form data instead of JSON
-        const formData = new URLSearchParams();
-        for (const key in data) {
-            formData.append(key, data[key]);
-        }
-
-        const res = await fetch(API_BASE, {
-            method: "POST",
-            redirect: "follow",
-            body: formData  // Send as form data, not JSON
-        });
-
-        const text = await res.text();
-        let json;
-        try {
-            json = JSON.parse(text);
-            Logger.info("API POST response", { success: json.ok, data: json });
-            return json;
-        } catch (err) {
-            Logger.error("Failed to parse JSON POST response", { text });
-            return { ok: false, error: "Invalid JSON from server" };
-        }
-
-    } catch (err) {
-        Logger.error("API POST failed", { error: String(err), body: data });
-        return { ok: false, error: String(err) };
+    if (!res.ok) {
+      throw new Error(`Network error: ${res.status}`);
     }
+
+    return await res.json();
+  } catch (err) {
+    console.error("API POST error:", err);
+    return { ok: false, error: String(err) };
+  }
 }
+
 
 
 /* ---------- Boot ---------- */
