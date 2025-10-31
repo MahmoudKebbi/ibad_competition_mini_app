@@ -10,7 +10,7 @@ const Logger = {
 };
 
 /* ---------- CONFIG ---------- */
-const API_BASE = "https://script.google.com/macros/s/AKfycbxfYBVamqq1Ua7lNsgw7sanBb7tunSdP9NxVX1Ggq6JI7mwBVYrRW2RP-WOimAbq9xJOQ/exec";
+const API_BASE = "https://script.google.com/macros/s/AKfycbyQoUlEAXWVehwU6r1fy2mhc16nSgzM_QQBIkN2ow-ywMhtsXdC3IiWpvrEQxZkjEgDqg/exec";
 const PROXY = "https://api.allorigins.win/raw?url=";
 
 Logger.info("Application initialized", { API_BASE });
@@ -293,7 +293,7 @@ function renderCommittee() {
 
 function participantsForCommittee() {
     const participants = state.participants.filter(p => 
-        String(p["اللجنة"]) === String(state.committee) && !p.submitted
+        String(p["اللجنة"]) === String(state.committee) // Removed: && !p.submitted
     );
     Logger.debug('participantsForCommittee', { committee: state.committee, count: participants.length });
     return participants;
@@ -305,9 +305,10 @@ function buildParticipantDropdown() {
     
     const dropdown = $("#participantDropdown");
     dropdown.innerHTML = '<option value="">-- اختر متسابقاً --</option>' +
-        state.availableParticipants.map(p => 
-            `<option value="${p.id}">${p["الاسم الثلاثي"] || "بدون اسم"}</option>`
-        ).join("");
+        state.availableParticipants.map(p => {
+            const submittedLabel = p.submitted ? ' ✓ (مُرسَل)' : '';
+            return `<option value="${p.id}">${p["الاسم الثلاثي"] || "بدون اسم"}${submittedLabel}</option>`;
+        }).join("");
     
     Logger.info('Participant dropdown built', { count: state.availableParticipants.length });
     
@@ -358,15 +359,21 @@ async function showParticipant(p) {
         participant: p.id, 
         name: p["الاسم الثلاثي"] 
     });
+    
+    // Warn if participant is already finalized
+    if (p.submitted) {
+        Logger.warn('Editing finalized participant', { participantId: p.id });
+    }
+    
     state.selParticipant = p;
     $("#card").classList.remove("hidden");
     $("#d-name").textContent = p["الاسم الثلاثي"] || "—";
     $("#d-meta").textContent = `العمر: ${p["العمر"] || ""} — القسم: ${p["القسم التربوي"] || ""}`;
-    $("#d-parts-numbers").value = p["أرقام الأجزاء"] || "—"; // Populate parts numbers
+    $("#d-parts-numbers").value = p["أرقام الأجزاء"] || "—";
     const cfg = stageConfig(p["عدد الأجزاء"], p["العمر"]);
     $("#d-qcount").value = cfg.N;
     $("#taj-wrapper").classList.toggle("hidden", !cfg.tajOn);
-    $("#submittedTag").classList.toggle("hidden", !!p.submitted);
+    $("#submittedTag").classList.toggle("hidden", !p.submitted); // Show if submitted
 
     // Update navigation buttons
     $("#btnPrevParticipant").disabled = state.currentParticipantIndex === 0;
@@ -412,9 +419,12 @@ function renderQuestion() {
     $("#in-hifz").value = g["حفظ"] || 0;
     $("#in-ada").value = g["أداء"] || 0;
     $("#in-taj").value = g["تجويد"] || 0;
+
+    // Set max attributes for input fields
     $("#in-hifz").max = cfg.perH;
     $("#in-ada").max = cfg.perA;
     $("#in-taj").max = cfg.perT;
+
     $("#progressBar").style.width = ((qn) / total * 100) + "%";
     $("#btnPrev").disabled = (qn <= 1);
     $("#btnNext").disabled = (qn >= total);
@@ -428,27 +438,38 @@ function saveCurrentGradeLocal() {
         Logger.warn('Grade row not found', { questionNumber: qn });
         return;
     }
+    const cfg = getMaxGrades(state.selParticipant["عدد الأجزاء"], state.selParticipant["العمر"]);
 
-    row["حفظ"] = num($("#in-hifz").value);
-    row["أداء"] = num($("#in-ada").value);
-    row["تجويد"] = num($("#in-taj").value);
+    // Clamp values to the maximum allowed grades
+    row["حفظ"] = Math.min(cfg.maxH, Math.max(0, num($("#in-hifz").value)));
+    row["أداء"] = Math.min(cfg.maxA, Math.max(0, num($("#in-ada").value)));
+    row["تجويد"] = cfg.tajOn ? Math.min(cfg.maxT, Math.max(0, num($("#in-taj").value))) : 0;
 
     Logger.info('Grade saved locally', {
         participantId: row.participant_id,
-        questionNumber: qn
+        questionNumber: qn,
+        حفظ: row["حفظ"],
+        أداء: row["أداء"],
+        تجويد: row["تجويد"]
     });
 
     updateRunningTotal();
 
+    // Send the grade to the server
     apiPost({
         action: "add_grade",
         participant_id: row.participant_id,
+        participant_name: state.selParticipant["الاسم الثلاثي"], // Ensure the name is sent
         question_number: row.question_number,
         "حفظ": row["حفظ"],
         "أداء": row["أداء"],
         "تجويد": row["تجويد"]
     }).then(res => {
         Logger.info('Grade saved to server', { success: res.ok, questionNumber: qn });
+        if (!res.ok) {
+            Logger.error('Failed to save grade to server', { error: res.error });
+            alert("فشل حفظ الدرجة: " + (res.error || ""));
+        }
     });
 }
 
@@ -769,3 +790,18 @@ window.addEventListener('unhandledrejection', (event) => {
         reason: event.reason
     });
 });
+
+
+// Returns max allowed scores per question according to Excel rules
+function getMaxGrades(parts, age) {
+    const p = Number(parts) || 0;
+    const tajOn = (Number(age) || 0) > 12;
+    let maxH = 10, maxA = 1, maxT = tajOn ? 2 : 0;
+
+    if (p >= 11) {
+        maxH = 15;
+        maxA = 2;
+        maxT = tajOn ? 3 : 0;
+    }
+    return { maxH, maxA, maxT, tajOn };
+}
